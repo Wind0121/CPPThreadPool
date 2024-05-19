@@ -48,7 +48,7 @@ public:
     using return_type = typename std::result_of<Func(T...)>::type;
 
     auto task =
-        std::shared_ptr<std::packaged_task<return_type()>>(std::move(execute));
+        std::make_shared<std::packaged_task<return_type()>>(std::move(execute));
     auto result = task->get_future();
 
     assert(!quit_);
@@ -79,36 +79,39 @@ public:
 
 private:
   void Worker() {
-    std::function<void()> task;
-    {
-      std::unique_lock<std::mutex> ul(mutex_);
-      ++idle_threads_;
-      bool has_timeout =
-          cv.wait_for(ul, std::chrono::seconds(kWaitSeconds),
-                      [this]() { return !queue_.empty() || quit_; });
+    while (true) {
+      std::function<void()> task;
+      {
+        std::unique_lock<std::mutex> ul(mutex_);
+        ++idle_threads_;
+        bool has_timeout =
+            !cv.wait_for(ul, std::chrono::seconds(kWaitSeconds),
+                         [this]() { return !queue_.empty() || quit_; });
+        --idle_threads_;
 
-      if (queue_.empty()) {
-        if (quit_) {
-          --current_threads_;
-          return;
+        if (queue_.empty()) {
+          if (quit_) {
+            --current_threads_;
+            return;
+          }
+          if (has_timeout) {
+            --current_threads_;
+            JoinFinishedThreads();
+            finished_threads_.emplace(std::this_thread::get_id());
+            return;
+          }
         }
-        if (has_timeout) {
-          --current_threads_;
-          JoinFinishedThreads();
-          finished_threads_.emplace(std::this_thread::get_id());
-          return;
-        }
+
+        task = std::move(queue_.front());
+        queue_.pop();
       }
-
-      task = std::move(queue_.front());
-      queue_.pop();
+      task();
     }
-    task();
   }
 
   void JoinFinishedThreads() {
     while (!finished_threads_.empty()) {
-      auto id = finished_threads_.front();
+      auto id = std::move(finished_threads_.front());
       finished_threads_.pop();
       auto iter = threads_.find(id);
       assert(iter != threads_.end());

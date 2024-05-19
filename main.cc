@@ -11,12 +11,12 @@ std::mutex cnt_mutex;
 void task(int task_id){
     {
         std::lock_guard<std::mutex> lg(cnt_mutex);
-        std::cout << "task %d start\n";
+        std::cout << "task-" << task_id << " start\n";
     }
     std::this_thread::sleep_for(std::chrono::seconds(2));
     {
         std::lock_guard<std::mutex> lg(cnt_mutex);
-        std::cout << "task %d end\n";
+        std::cout << "task-" << task_id << " end\n";
     }
 }
 
@@ -32,8 +32,9 @@ void monitor(const ThreadPool& pool,int seconds){
 
 int main(){
     ThreadPool pool(kThreadsNum);
-    pool.Submit(monitor, pool,13);
-    for(int i = 1;i < kThreadsNum;i++){
+    pool.Submit(monitor, std::ref(pool),13);
+    for(int i = 1;i < 100;i++){
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
         pool.Submit(task, i);
     }
     return 0;
