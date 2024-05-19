@@ -30,7 +30,7 @@ public:
   ~ThreadPool() {
     {
       std::lock_guard<std::mutex> lg(mutex_);
-      quit_ = false;
+      quit_ = true;
     }
     cv.notify_all();
     for (auto &iter : threads_) {
@@ -86,9 +86,8 @@ private:
         ++idle_threads_;
         bool has_timeout =
             !cv.wait_for(ul, std::chrono::seconds(kWaitSeconds),
-                         [this]() { return !queue_.empty() || quit_; });
+                         [this]() { return quit_ || !queue_.empty(); });
         --idle_threads_;
-
         if (queue_.empty()) {
           if (quit_) {
             --current_threads_;
